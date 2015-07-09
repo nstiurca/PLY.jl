@@ -1,16 +1,30 @@
-module PLY
+#module PLY
 
 # package code goes here
 
 const MAGIC = "ply\n"
-const FORMAT_ASCII                   = 1
-const FORMAT_BINARY_LITTLE_ENDIAN    = 2
-const FORMAT_BINARY_BIG_ENDIAN       = 3
-const FORMAT_STRINGS = ["ascii", "binary_little_endian", "binary_big_endian"]
-const FORMAT_NUMERALS = [
-  FORMAT_STRINGS[FORMAT_ASCII]                 => FORMAT_ASCII,
-  FORMAT_STRINGS[FORMAT_BINARY_LITTLE_ENDIAN]  => FORMAT_BINARY_LITTLE_ENDIAN,
-  FORMAT_STRINGS[FORMAT_BINARY_BIG_ENDIAN]     => FORMAT_BINARY_BIG_ENDIAN]
+# const FORMAT_ASCII                   = 1
+# const FORMAT_BINARY_LITTLE_ENDIAN    = 2
+# const FORMAT_BINARY_BIG_ENDIAN       = 3
+abstract FORMAT
+type FORMAT_ASCII <: FORMAT end
+type FORMAT_BINARY_LITTLE_ENDIAN end
+type FORMAT_BINARY_BIG_ENDIAN end
+FORMATS = Union(Type{FORMAT_ASCII}, Type{FORMAT_BINARY_LITTLE_ENDIAN}, Type{FORMAT_BINARY_BIG_ENDIAN})
+
+# function format_string end
+format_string(::Type{FORMAT_ASCII}) = "ascii"
+format_string(::Type{FORMAT_BINARY_LITTLE_ENDIAN}) = "binary_little_endian"
+format_string(::Type{FORMAT_BINARY_BIG_ENDIAN}) = "binary_big_endian"
+
+# const FORMAT_STRINGS = [
+#   "ascii",
+#   "binary_little_endian",
+#   "binary_big_endian"]
+const FORMAT_TYPE = [
+  format_string(FORMAT_ASCII)                 => FORMAT_ASCII,
+  format_string(FORMAT_BINARY_LITTLE_ENDIAN)  => FORMAT_BINARY_LITTLE_ENDIAN,
+  format_string(FORMAT_BINARY_BIG_ENDIAN)     => FORMAT_BINARY_BIG_ENDIAN]
 
 #   Dict(zip(FORMAT_STRINGS, 1:3))
 
@@ -80,7 +94,7 @@ end
 Element(name, count) = Element(name, int(count), Array(AProperty, 0))
 
 type Header
-  format::ASCIIString
+  format::FORMATS
   version::ASCIIString
   elements::Vector{Element}
 end
@@ -90,7 +104,7 @@ function Header(format_line::ASCIIString)
   if "format" != words[1]
     throw(ParseError("Expected format line to begin with \"format\". The line is instead " * format_line))
   end
-  Header(words[2], words[3])
+  Header(FORMAT_TYPE[words[2]], words[3])
 end
 
 export header
@@ -137,10 +151,10 @@ function header(f)
   return hdr
 end # function header
 
-Base.string(p::PLY.Property) = "$(p.name)::$(string(p.typ))"
-Base.string(p::PLY.ListProperty) = "$(p.name)::Vector{$(string(p.typ))}"
+Base.string(p::Property) = "$(p.name)::$(string(p.typ))"
+Base.string(p::ListProperty) = "$(p.name)::Vector{$(string(p.typ))}"
 
-function julia_type(e::PLY.Element)
+function julia_type(e::Element)
   str = "immutable Element_$(e.name)\n"
   for p = e.properties
     str *= "\t$(string(p))\n"
@@ -149,36 +163,79 @@ function julia_type(e::PLY.Element)
 end
 
 export expr
-expr(p::PLY.Property) = :($(p.name) :: $(p.typ))
-expr(p::PLY.ListProperty) = :($(p.name) :: Vector{$(p.typ)})
+expr(p::Property) = :($(p.name) :: $(p.typ))
+expr(p::ListProperty) = :($(p.name) :: Vector{$(p.typ)})
+function expr(h::Header)
+  s = gensym("PLY_file")
+  #s = :PLY_file
 
-expr(e::PLY.Element) = begin
-  ret = parse("immutable $(string(e.name))
-#     $(map(expr, e.properties))
-    end")
-  ret.args[3].args = map(expr, e.properties)
-#   ret.args[2].args[3].args = map(expr, e.properties)
-  ret
+  typ = :(type $s end)
+  ctor = :($s() = $s())
+  reader = :(function Base.read(f::IO, ::Type{$s})
+            ret = $s()
+          end)
+
+  for e in h.elements
+    push!(typ.args[3].args, :($(e.name)::Vector{$(e.name)}))
+
+    e_count = symbol(string(e.name)*"_count")
+    push!(ctor.args[1].args, :($e_count::Integer))
+    push!(ctor.args[2].args, :(Array($(e.name), $e_count)))
+
+
+    push!(reader.args[2].args[2].args[2].args, e.count)
+    push!(reader.args[2].args, :(for i=1:$(e.count)
+                                (ret.$(e.name))[i] = read(f, $(e.name))
+                              end))
+  end
+
+  push!(reader.args[2].args, :(ret))
+
+  [typ, ctor, reader]
+end
+
+expr(e::Element) = begin
+  defn = :(immutable $(e.name) end)
+  defn.args[3].args = map(expr, e.properties)
+  defn
 end
 
 export instantiate_types
-function instantiate_types(h::PLY.Header)
-  types = map(PLY.expr, h.elements)   # build expressions for each type
-  map(PLY.eval, types)                    # instantiate the types
-  map(t -> PLY.eval(t.args[2]), types)    # return a DataType for each type
+function instantiate_types(h::Header)
+  types = map(expr, h.elements)   # build expressions for each type
+  map(eval, types)                    # instantiate the types
+  map(t -> eval(t.args[2]), types)    # return a DataType for each type
 end
 
-get_type(e::Element) = PLY.eval(e.name)
+get_type(e::Element) = eval(e.name)
 
-function read_ascii(AProperty)
+# function read_ascii(AProperty)
 
-function read_ascii(f::IO, e::Element)
-  typ = get_type(e)
-  data = Array(typ, e.count)
-  for i=1:e.count
-    val_strs = split(readline(f))
-    it = start(val_strl)
+# function read_ascii(f::IO, e::Element)
+#   typ = get_type(e)
+#   data = Array(typ, e.count)
+#   for i=1:e.count
+#     val_strs = split(readline(f))
+#     it = start(val_strl)
 
 
+#module ascii
+#include(joinpath(Pkg.dir("PLY"), "src", "ascii.jl"))
+include("ascii.jl")
+#end
 
-end # module
+function load(f0::IO)
+  hdr = header(f0)
+
+  type_exprs = map(expr, hdr.elements)
+  read_exprs = map(e->element_impl_expr(e, hdr.format), hdr.elements)
+  hdr_exprs = expr(hdr)
+
+  module_expr = :(module BAR end)
+  s = module_expr.args[2] = gensym()
+  module_expr.args[3].args = union(module_expr.args[3].args, type_exprs, read_exprs, hdr_exprs)
+  eval(module_expr)
+  ply0 = read(f0, eval(:($s.$(hdr_exprs[1].args[2]))))
+end
+
+#end # module

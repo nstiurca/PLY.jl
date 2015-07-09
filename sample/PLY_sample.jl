@@ -4,10 +4,23 @@ ex0_fname = joinpath(Pkg.dir("PLY"), "data", "ex0.ply")
 ex1_fname = joinpath(Pkg.dir("PLY"), "data", "ex1.ply")
 
 f0 = open(ex0_fname, "r")
-hdr = PLY.header(f0)
+
+hdr = header(f0)
+
+type_exprs = map(expr, hdr.elements)
+read_exprs = map(e->element_impl_expr(e, hdr.format), hdr.elements)
+hdr_exprs = expr(hdr)
+
+module_expr = :(module BAR end)
+s = module_expr.args[2] = gensym()
+module_expr.args[3].args = union(module_expr.args[3].args, type_exprs, read_exprs, hdr_exprs)
+eval(module_expr)
+ply0 = read(f0, eval(:($s.$(hdr_exprs[1].args[2]))))
+
 close(f0)
 
-hdr = open(ex0_fname, "r") do f PLY.header(f) end
+ex0 = open(ex0_fname, "r") do f load(f) end
+ex1 = open(ex1_fname, "r") do f load(f) end
 
 types = instantiate_types(hdr)
 
@@ -31,59 +44,7 @@ life, it = next(vs, it)
 vals = Array(Int32, )
 vals = [int32(x) for x in take(vs, uint8(count))]
 
-function parse_property(vs, it, p::PLY.AProperty)
-end
 
-function parse_property(vs, it, p::PLY.Property)
-  val, it = next(vs, it)
-  PLY.TYPE_READERS[p.typ](val), it
-end
-
-function parse_property(vs, it, p::PLY.ListProperty)
-  count_str, it = next(vs, it)
-  count = PLY.TYPE_READERS[p.count_type](count_str)
-  map(PLY.TYPE_READERS[p.typ], vs[it:it+count-1]), it+count
-end
-
-function parse_property_impl_string_ascii(p::PLY.AProperty)
-end
-
-function parse_property_impl_string_ascii(p::PLY.Property)
-  "$(string(p.name)), it = next(vs, it)"
-end
-
-function parse_property_impl_string_ascii(p::PLY.ListProperty)
-  "$(string)"
-end
-
-
-function element_impl_string_ascii(e::PLY.Element; tab="  ")
-  # define the type
-  lines = ["immutable $(string(e.name))"]
-  for p = e.properties
-    push!(lines, tab * string(p)) #"$(tab)$(string(p.name))::$(string(p.typ))")
-  end
-  push!(lines, "end")
-  defn = join(lines, "\n")
-
-  # define reading each property
-  lines = ["function read_$(string(e.name))_ascii(f::IO)",
-           "$(tab)vs = split(readline(f))",
-           "$(tab)it = start(vs)"]
-  for p=e.properties
-    #push!(lines, "$(tab)$(string(p.name)), it = parse_property(vs, it, p)")
-    push!(lines, "$(tab)$(string(p.name)), it = parse_property(vs, it, PLY.$(repr(p)))")
-    #push!(lines, tab * parse_property_impl_string_ascii(p))
-  end
-  # check that we parsed exactly the right number of things
-  push!(lines, "\n$(tab)done(vs, it) || error(\"Unexpected toneks left over in \$vs starting at \$it.\")\n")
-  args = join(map(p->string(p.name), e.properties), ", ")
-  push!(lines, "$(tab)$(string(e.name))($args)")
-  push!(lines, "end")
-  ascii_reader = join(lines, "\n")
-
-  defn, ascii_reader
-end
 
 ####
 immutable vertex
@@ -118,3 +79,18 @@ function read_face_ascii(f::IO)
   face2(vertex_index)
 end
 
+
+function Base.read(f::IO, ::Type{PLY_file})
+  counts = map(e->e.count, hdr.elements)
+  ret = PLY_file(counts...)
+
+  for i=1:counts[1]
+    ret.vertex[i] = read(f, vertex)
+  end
+
+  for i=1:counts[2]
+    ret.face[i] = read(f, face)
+  end
+
+  ret
+end
