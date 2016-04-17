@@ -1,4 +1,4 @@
-import PLY
+#import PLY
 
 ex0_fname = joinpath(Pkg.dir("PLY"), "data", "ex0.ply")
 ex1_fname = joinpath(Pkg.dir("PLY"), "data", "ex1.ply")

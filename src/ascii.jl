@@ -49,7 +49,7 @@ function element_impl_string_ascii(e::Element; tab="  ")
     #push!(lines, tab * parse_property_impl_string_ascii(p))
   end
   # check that we parsed exactly the right number of things
-  push!(lines, "\n$(tab)done(vs, it) || error(\"Unexpected toneks left over in \$vs starting at \$it.\")\n")
+  push!(lines, "\n$(tab)done(vs, it) || error(\"Unexpected tokens left over in \$vs starting at \$it.\")\n")
   args = join(map(p->string(p.name), e.properties), ", ")
   push!(lines, "$(tab)$(string(e.name))($args)")
   push!(lines, "end")
