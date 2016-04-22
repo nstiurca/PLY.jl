@@ -77,7 +77,7 @@ function element_impl_expr_ascii(e::Element)
   ascii_reader
 end
 
-function load(f::IO, hdr::Header)
+function load_PLY(f::IO, hdr::Header)
   types = instantiate_types(hdr)
   elem_arrays = Array[]
   for (elem, typ) in zip(hdr.elements, types)

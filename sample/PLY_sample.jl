@@ -19,8 +19,8 @@ ply0 = read(f0, eval(:($s.$(hdr_exprs[1].args[2]))))
 
 close(f0)
 
-ex0 = open(ex0_fname, "r") do f load(f) end
-ex1 = open(ex1_fname, "r") do f load(f) end
+ex0 = open(ex0_fname, "r") do f load_PLY(f) end
+ex1 = open(ex1_fname, "r") do f load_PLY(f) end
 
 types = instantiate_types(hdr)
 

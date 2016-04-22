@@ -117,10 +117,11 @@ function header(f)
     throw(ParseError("Bad magic number: " * string(f_magic)))
   end
 
-  hdr = Header(readline(f))
+  s = FileIO.stream(f)
+  hdr = Header(readline(s))
   lines_read = 2    # MAGIC and format
 
-  for line in eachline(f)
+  for line in eachline(s)
     words = split(line)
     lines_read += 1
 
@@ -135,7 +136,7 @@ function header(f)
     elseif words[1] == "element"
       push!(hdr.elements, Element(words[2], words[3]))
 
-  elseif words[1] == "comment"
+    elseif words[1] == "comment"
       # TODO: save coments to header
       continue
 
@@ -196,7 +197,7 @@ end
 expr(e::Element) = begin
   defn = :(immutable $(e.name) end)
   defn.args[3].args = map(expr, e.properties)
-  defn
+  :($defn; $(e.name))
 end
 
 export instantiate_types
@@ -223,7 +224,7 @@ get_type(e::Element) = eval(e.name)
 include("ascii.jl")
 #end
 
-function load(f0::IO)
+function load_PLY(f0::IO)
   hdr = header(f0)
 
   type_exprs = map(expr, hdr.elements)
@@ -239,6 +240,97 @@ function load(f0::IO)
   println(M)
   println(hdr_exprs[1].args[2])
   ply0 = read(f0, eval(M, :($(hdr_exprs[1].args[2]))))
+end
+
+
+# set up FileIO
+
+using FileIO
+FileIO.add_format(format"PLY", MAGIC, ".ply")
+FileIO.add_loader(format"PLY", :PLY)
+
+export load
+
+@generated function read_ascii14{E}(s, e::Type{E})
+  e_typ = string(E)
+  println("read_ascii14: e_typ = $e_typ")
+
+  exprs = [ :(vs = split(readline(s))),
+            :(it = start(vs))]
+  for (prop_name, prop_type) in zip(fieldnames(E), E.types)
+    if prop_type <: Number
+      push!(exprs, :((_tmp, it) = next(vs, it)))
+      push!(exprs, :($prop_name = parse($prop_type, _tmp)))
+    elseif prop_type <: Vector
+      prop_eltype = eltype(prop_type)
+      push!(exprs, :((_tmp, it) = next(vs, it)))
+      push!(exprs, :($prop_name = Array($prop_eltype, parse(Int, _tmp))))
+      push!(exprs, :(for _i = 1 : length($prop_name)
+                      (_tmp, it) = next(vs, it)
+                      $prop_name[_i] = parse($prop_eltype, _tmp)
+                    end))
+    else
+      error("Unsupported property $prop_name::$prop_type")
+    end
+  end
+  push!(exprs, :(done(vs, it) || error("Unexpected toxens left over in \$vs starting at \$it.")))
+
+  # if E <: Number
+  #   println("read_ascii14: Number")
+  #   ret = :(parse($E, readuntil(s, " "))) #:(read(s, $E))
+  #   println("read_ascii14: ret = $ret")
+  #   return ret
+  # end
+
+  # ctor_args = [:(read_ascii(s, $prop_type)) for prop_type in E.types]
+  # fields = [:($prop_name = read_ascii14(s, $prop_type))
+  #               for (prop_name, prop_type) in zip(fieldnames(E), E.types)]
+  ctor_args = [:($prop_name) for prop_name in fieldnames(E)]
+  push!(exprs, :($E($(ctor_args...))))
+  # ret = :($(exprs...))
+  ret = quote $(exprs...) end
+  # ret = :($(fields...); readline(s); $E($(ctor_args...)))
+  # :(E($(ctor_args...)))
+  # :(
+  # println(readline((s)));
+  # E(1,2,3) #$(map(t->read(s,t), for t in E.types)...))
+  # )
+  # println("read_ascii14: fields = $fields")
+  println("read_ascii14: ctor_args = $ctor_args")
+  println("read_ascii14: ret = $ret")
+  return ret
+end
+
+function Base.read(s::FileIO.Stream{format"PLY"}, typ, count)
+  ret = Array(typ, count)
+  ss = stream(s)
+  println("read: PLY $typ $count")
+  for i = 1:count
+    ret[i] = read_ascii14(ss, typ)
+    println("read: $i $(ret[i])")
+  end
+  ret
+end
+
+function FileIO.load(f::File{format"PLY"})
+  open(f) do s
+    # skipmagic(s)
+
+    println("load: typeof(s) = $(typeof(s))")
+
+    hdr = header(s)
+    println("load: hdr = $hdr")
+    map(hdr.elements) do e
+    println("load: hdr.element e = $e")
+      typ = eval(expr(e))
+      # els = Array(typ, e.count)
+      # for i = 1:e.count
+      #   els[i] = read(s, typ)
+      # end
+      # els
+      read(s, typ, e.count)
+    end
+  end
 end
 
 end # module
