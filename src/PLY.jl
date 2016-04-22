@@ -221,26 +221,26 @@ get_type(e::Element) = eval(e.name)
 
 #module ascii
 #include(joinpath(Pkg.dir("PLY"), "src", "ascii.jl"))
-include("ascii.jl")
+# include("ascii.jl")
 #end
 
-function load_PLY(f0::IO)
-  hdr = header(f0)
-
-  type_exprs = map(expr, hdr.elements)
-  read_exprs = map(e->element_impl_expr(e, hdr.format), hdr.elements)
-  hdr_exprs = expr(hdr)
-
-  module_expr = :(module $(gensym()) end)
-  module_name = module_expr.args[2]
-  module_expr.args[3].args = union(module_expr.args[3].args, type_exprs, read_exprs, hdr_exprs)
-  println(module_expr)
-  eval(module_expr)
-  M = eval(module_name)
-  println(M)
-  println(hdr_exprs[1].args[2])
-  ply0 = read(f0, eval(M, :($(hdr_exprs[1].args[2]))))
-end
+# function load_PLY(f0::IO)
+#   hdr = header(f0)
+#
+#   type_exprs = map(expr, hdr.elements)
+#   read_exprs = map(e->element_impl_expr(e, hdr.format), hdr.elements)
+#   hdr_exprs = expr(hdr)
+#
+#   module_expr = :(module $(gensym()) end)
+#   module_name = module_expr.args[2]
+#   module_expr.args[3].args = union(module_expr.args[3].args, type_exprs, read_exprs, hdr_exprs)
+#   println(module_expr)
+#   eval(module_expr)
+#   M = eval(module_name)
+#   println(M)
+#   println(hdr_exprs[1].args[2])
+#   ply0 = read(f0, eval(M, :($(hdr_exprs[1].args[2]))))
+# end
 
 
 # set up FileIO
@@ -251,9 +251,9 @@ FileIO.add_loader(format"PLY", :PLY)
 
 export load
 
-@generated function read_ascii14{E}(s, e::Type{E})
-  e_typ = string(E)
-  println("read_ascii14: e_typ = $e_typ")
+@generated function read_ascii{E}(s, e::Type{E})
+  # e_typ = string(E)
+  # println("read_ascii: e_typ = $e_typ")
 
   exprs = [ :(vs = split(readline(s))),
             :(it = start(vs))]
@@ -275,29 +275,12 @@ export load
   end
   push!(exprs, :(done(vs, it) || error("Unexpected toxens left over in \$vs starting at \$it.")))
 
-  # if E <: Number
-  #   println("read_ascii14: Number")
-  #   ret = :(parse($E, readuntil(s, " "))) #:(read(s, $E))
-  #   println("read_ascii14: ret = $ret")
-  #   return ret
-  # end
-
-  # ctor_args = [:(read_ascii(s, $prop_type)) for prop_type in E.types]
-  # fields = [:($prop_name = read_ascii14(s, $prop_type))
-  #               for (prop_name, prop_type) in zip(fieldnames(E), E.types)]
-  ctor_args = [:($prop_name) for prop_name in fieldnames(E)]
-  push!(exprs, :($E($(ctor_args...))))
-  # ret = :($(exprs...))
+  # ctor_args = [:($prop_name) for prop_name in fieldnames(E)]
+  push!(exprs, :($E($(fieldnames(E)...))))
   ret = quote $(exprs...) end
-  # ret = :($(fields...); readline(s); $E($(ctor_args...)))
-  # :(E($(ctor_args...)))
-  # :(
-  # println(readline((s)));
-  # E(1,2,3) #$(map(t->read(s,t), for t in E.types)...))
-  # )
-  # println("read_ascii14: fields = $fields")
-  println("read_ascii14: ctor_args = $ctor_args")
-  println("read_ascii14: ret = $ret")
+
+  # println("read_ascii: ctor_args = $ctor_args")
+  # println("read_ascii: ret = $ret")
   return ret
 end
 
@@ -306,8 +289,8 @@ function Base.read(s::FileIO.Stream{format"PLY"}, typ, count)
   ss = stream(s)
   println("read: PLY $typ $count")
   for i = 1:count
-    ret[i] = read_ascii14(ss, typ)
-    println("read: $i $(ret[i])")
+    ret[i] = read_ascii(ss, typ)
+    # println("read: $i $(ret[i])")
   end
   ret
 end
@@ -316,18 +299,13 @@ function FileIO.load(f::File{format"PLY"})
   open(f) do s
     # skipmagic(s)
 
-    println("load: typeof(s) = $(typeof(s))")
+    # println("load: typeof(s) = $(typeof(s))")
 
     hdr = header(s)
     println("load: hdr = $hdr")
     map(hdr.elements) do e
-    println("load: hdr.element e = $e")
+      # println("load: hdr.element e = $e")
       typ = eval(expr(e))
-      # els = Array(typ, e.count)
-      # for i = 1:e.count
-      #   els[i] = read(s, typ)
-      # end
-      # els
       read(s, typ, e.count)
     end
   end

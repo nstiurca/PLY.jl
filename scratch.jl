@@ -6,19 +6,15 @@ ex0_fname = joinpath(Pkg.dir("PLY"), "data", "ex0.ply")
 ex1_fname = joinpath(Pkg.dir("PLY"), "data", "ex1.ply")
 
 ex0 = load(ex0_fname)
+ex1 = load(ex1_fname)
 
-ex0_el1 = ex0.elements[1]
-e = expr(ex0_el1)
-a = eval(expr(ex0_el1))
-
-a
-
+quote
 syms = [:a, :b, :c]
 typs = [Int, Float32, Char]
 e = :(type Foo end)
 e.args[3].args = [:($sym::$typ) for (sym,typ) in zip(syms,typs)]
 e
-
+end
 
 f = :(type bar
   $(sym::typ for (sym,typ) in zip(syms,typs))
@@ -64,6 +60,7 @@ end
 push!(exprs, :(done(vs, it) || error("Unexpected toxens left over in \$vs starting at \$it.")))
 
 ctor_args = [:($prop_name) for prop_name in fieldnames(E)]
-push!(exprs, :($E($(ctor_args...))))
+ctor_args = fieldnames(E)
+push!(exprs, :($E($(fieldnames(E)...))))
 ret = :($(exprs...))
 ret = quote $(exprs...) end
